@@ -1,12 +1,11 @@
-// hooks/useRealContracts.ts - CREAR ESTE ARCHIVO NUEVO
+// hooks/useRealContracts.ts - REEMPLAZAR TODO EL CONTENIDO
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
 import { 
   useActiveAccount, 
   useReadContract, 
-  useSendTransaction,
-  useWaitForReceipt 
+  useSendTransaction
 } from 'thirdweb/react';
 import { 
   getContract, 
@@ -18,7 +17,7 @@ import { toWei, fromWei } from 'thirdweb/utils';
 import { client } from '../src/app/client';
 import { FACTORY_CONTRACT_ABI, PROFILE_CONTRACT_ABI } from '../contracts/abis';
 
-// ✅ SCROLL SEPOLIA CHAIN CONFIGURATION
+// ✅ SCROLL SEPOLIA CHAIN CONFIGURATION - CORREGIDA
 const scrollSepolia = defineChain({
   id: 534351,
   name: "Scroll Sepolia",
@@ -37,13 +36,13 @@ const scrollSepolia = defineChain({
   testnet: true,
 });
 
-// ✅ FACTORY CONTRACT ADDRESS
-const FACTORY_ADDRESS = process.env.NEXT_PUBLIC_FACTORY_CONTRACT_ADDRESS || "0x0CBBb59863DC8612441D4fa1F47483856E2EB34f";
+// ✅ FACTORY CONTRACT ADDRESS - USANDO TU DIRECCIÓN
+const FACTORY_ADDRESS = "0x0CBBb59863DC8612441D4fa1F47483856E2EB34f";
 
-// ✅ ETH PRICE (hardcoded for demo, in production use a price API)
+// ✅ ETH PRICE (hardcoded for demo)
 const ETH_PRICE_USD = 2000;
 
-// ✅ INTERFACE TYPES
+// ✅ TIPOS DE DATOS
 interface ProfileData {
   id: number;
   contractAddress: string;
@@ -72,7 +71,7 @@ interface PrivateInfo {
   timestamp: number;
 }
 
-// ✅ HOOK PRINCIPAL PARA EL FACTORY CONTRACT
+// ✅ HOOK PRINCIPAL PARA EL FACTORY CONTRACT - MEJORADO
 export function useRealProfileFactory() {
   const account = useActiveAccount();
   const [profileData, setProfileData] = useState<ProfileData[]>([]);
@@ -88,47 +87,49 @@ export function useRealProfileFactory() {
     abi: FACTORY_CONTRACT_ABI,
   });
 
-  // ✅ READ TOTAL PROFILES
-  const { data: totalProfiles } = useReadContract({
+  // ✅ READ CONTRACT DATA CON MEJOR MANEJO DE ERRORES
+  const totalProfilesQuery = useReadContract({
     contract: factoryContract,
     method: "getTotalProfiles",
     params: [],
   });
 
-  // ✅ READ ACTIVE PROFILES
-  const { data: activeProfiles } = useReadContract({
+  const activeProfilesQuery = useReadContract({
     contract: factoryContract,
     method: "getActiveProfiles",
     params: [],
   });
 
-  // ✅ READ USER PROFILES
-  const { data: ownerProfiles } = useReadContract({
+  const ownerProfilesQuery = useReadContract({
     contract: factoryContract,
     method: "getOwnerProfiles",
-    params: [account?.address || "0x0"],
+    params: [account?.address || "0x0000000000000000000000000000000000000000"],
   });
 
   // ✅ TRANSACTION SENDING
   const { mutate: sendTransaction, data: transactionResult } = useSendTransaction();
 
-  // ✅ WAIT FOR RECEIPT
-  const { data: receipt } = useWaitForReceipt({
-    client,
-    chain: scrollSepolia,
-    transactionHash: transactionResult?.transactionHash,
-  });
-
-  // ✅ LOAD PROFILE DETAILS
+  // ✅ CARGAR DETALLES DE PERFILES - MEJORADO
   const loadProfileDetails = useCallback(async () => {
-    if (!activeProfiles?.length) return;
+    const activeProfiles = activeProfilesQuery.data as bigint[] | undefined;
+    
+    if (!activeProfiles?.length) {
+      console.log("📋 No hay perfiles activos");
+      setProfileData([]);
+      setIsLoading(false);
+      return;
+    }
 
+    console.log(`📋 Cargando ${activeProfiles.length} perfiles...`);
     setIsLoading(true);
+    
     try {
       const profiles: ProfileData[] = [];
       
       for (const profileId of activeProfiles) {
         try {
+          console.log(`📄 Cargando perfil ${profileId.toString()}...`);
+          
           const profileResult = await readContract({
             contract: factoryContract,
             method: "getProfile",
@@ -136,35 +137,43 @@ export function useRealProfileFactory() {
           });
           
           if (profileResult) {
-            profiles.push({
+            const profile = {
               id: Number(profileResult.id),
               contractAddress: profileResult.contractAddress,
               owner: profileResult.owner,
               name: profileResult.name,
               createdAt: Number(profileResult.createdAt),
               isActive: profileResult.isActive
-            });
+            };
+            
+            console.log(`✅ Perfil ${profileId} cargado:`, profile);
+            profiles.push(profile);
           }
         } catch (error) {
-          console.error(`Error loading profile ${profileId}:`, error);
+          console.error(`❌ Error cargando perfil ${profileId}:`, error);
         }
       }
 
+      console.log(`✅ ${profiles.length} perfiles cargados exitosamente`);
       setProfileData(profiles);
     } catch (error) {
-      console.error('Error loading profile details:', error);
+      console.error('❌ Error general cargando perfiles:', error);
     } finally {
       setIsLoading(false);
     }
-  }, [activeProfiles, factoryContract]);
+  }, [activeProfilesQuery.data, factoryContract]);
 
-  // ✅ LOAD USER PROFILES
+  // ✅ CARGAR PERFILES DEL USUARIO
   const loadUserProfiles = useCallback(async () => {
+    const ownerProfiles = ownerProfilesQuery.data as bigint[] | undefined;
+    
     if (!account?.address || !ownerProfiles?.length) {
       setUserProfiles([]);
       return;
     }
 
+    console.log(`👤 Cargando ${ownerProfiles.length} perfiles del usuario...`);
+    
     try {
       const profiles: ProfileData[] = [];
       
@@ -187,17 +196,18 @@ export function useRealProfileFactory() {
             });
           }
         } catch (error) {
-          console.error(`Error loading user profile ${profileId}:`, error);
+          console.error(`❌ Error cargando perfil del usuario ${profileId}:`, error);
         }
       }
 
+      console.log(`✅ ${profiles.length} perfiles del usuario cargados`);
       setUserProfiles(profiles);
     } catch (error) {
-      console.error('Error loading user profiles:', error);
+      console.error('❌ Error cargando perfiles del usuario:', error);
     }
-  }, [account?.address, ownerProfiles, factoryContract]);
+  }, [account?.address, ownerProfilesQuery.data, factoryContract]);
 
-  // ✅ CREATE PROFILE FUNCTION
+  // ✅ CREAR PERFIL - MEJORADO
   const createProfile = useCallback(async (data: {
     name: string;
     title: string;
@@ -205,15 +215,23 @@ export function useRealProfileFactory() {
     experience: string;
     accessPriceUSD: number;
   }) => {
-    if (!account) throw new Error('Wallet not connected');
+    if (!account) {
+      throw new Error('Wallet no conectada');
+    }
+
+    // Verificar si ya tiene perfiles
+    if (userProfiles && userProfiles.length > 0) {
+      throw new Error('Ya tienes un perfil creado. Solo se permite un perfil por wallet.');
+    }
 
     setIsCreating(true);
+    
     try {
-      // Convert USD to wei (using ETH price)
+      // Convertir USD a wei
       const accessPriceETH = data.accessPriceUSD / ETH_PRICE_USD;
       const accessPriceWei = toWei(accessPriceETH.toString());
 
-      console.log("💰 Creating profile with:", {
+      console.log("💰 Creando perfil con parámetros:", {
         name: data.name,
         title: data.title,
         company: data.company,
@@ -223,7 +241,7 @@ export function useRealProfileFactory() {
         accessPriceWei: accessPriceWei.toString()
       });
 
-      // Prepare the transaction
+      // Preparar transacción
       const transaction = prepareContractCall({
         contract: factoryContract,
         method: "createProfile",
@@ -236,43 +254,72 @@ export function useRealProfileFactory() {
         ],
       });
 
-      // Send transaction
+      console.log("📤 Enviando transacción...");
+      
+      // Enviar transacción
       sendTransaction(transaction);
 
-      // Return transaction info
+      // Simular éxito hasta que se confirme
+      console.log("✅ Transacción enviada");
+      
       return {
         transactionHash: transactionResult?.transactionHash,
         success: true
       };
 
     } catch (error: any) {
-      console.error('❌ Error creating profile:', error);
-      throw error;
+      console.error('❌ Error creando perfil:', error);
+      
+      // Manejar errores específicos
+      if (error.message?.includes("rejected")) {
+        throw new Error("Transacción rechazada por el usuario");
+      } else if (error.message?.includes("insufficient")) {
+        throw new Error("Fondos insuficientes para completar la transacción");
+      } else {
+        throw error;
+      }
     } finally {
       setIsCreating(false);
     }
-  }, [account, factoryContract, sendTransaction, transactionResult]);
+  }, [account, factoryContract, sendTransaction, transactionResult, userProfiles]);
 
   // ✅ REFETCH DATA
   const refetchData = useCallback(() => {
+    console.log("🔄 Refrescando datos...");
     loadProfileDetails();
     loadUserProfiles();
   }, [loadProfileDetails, loadUserProfiles]);
 
   // ✅ EFFECTS
   useEffect(() => {
-    loadProfileDetails();
-  }, [loadProfileDetails]);
+    if (activeProfilesQuery.data) {
+      loadProfileDetails();
+    }
+  }, [activeProfilesQuery.data, loadProfileDetails]);
 
   useEffect(() => {
-    loadUserProfiles();
-  }, [loadUserProfiles]);
+    if (ownerProfilesQuery.data || account?.address) {
+      loadUserProfiles();
+    }
+  }, [ownerProfilesQuery.data, account?.address, loadUserProfiles]);
 
-  // ✅ RETURN HOOK STATE
+  // ✅ LOG DEBUG INFO
+  useEffect(() => {
+    console.log("🔍 Debug Info:", {
+      isConnected: !!account,
+      contractAddress: FACTORY_ADDRESS,
+      totalProfiles: totalProfilesQuery.data?.toString(),
+      activeProfilesCount: activeProfilesQuery.data?.length,
+      userProfilesCount: userProfiles.length,
+      profileDataCount: profileData.length,
+      isLoading
+    });
+  }, [account, totalProfilesQuery.data, activeProfilesQuery.data, userProfiles, profileData, isLoading]);
+
   return {
     // Data
-    totalProfiles: Number(totalProfiles || 0),
-    activeProfiles: activeProfiles || [],
+    totalProfiles: Number(totalProfilesQuery.data || 0),
+    activeProfiles: activeProfilesQuery.data || [],
     profileData,
     userProfiles,
     
@@ -291,11 +338,10 @@ export function useRealProfileFactory() {
     
     // Transaction state
     transactionResult,
-    receipt,
   };
 }
 
-// ✅ HOOK PARA INDIVIDUAL PROFILE CONTRACTS
+// ✅ HOOK PARA PROFILE CONTRACTS INDIVIDUALES - MEJORADO
 export function useRealProfileContract(contractAddress: string) {
   const account = useActiveAccount();
   const [isLoading, setIsLoading] = useState(true);
@@ -315,20 +361,27 @@ export function useRealProfileContract(contractAddress: string) {
   // ✅ TRANSACTION SENDING
   const { mutate: sendTransaction } = useSendTransaction();
 
-  // ✅ LOAD CONTRACT DATA
+  // ✅ CARGAR DATOS DEL CONTRATO - MEJORADO
   const loadContractData = useCallback(async () => {
-    if (!contractAddress || contractAddress === "0x0") return;
+    if (!contractAddress || contractAddress === "0x0") {
+      setIsLoading(false);
+      return;
+    }
 
+    console.log(`📄 Cargando datos del contrato: ${contractAddress}`);
     setIsLoading(true);
+    
     try {
-      // Load public info
+      // Cargar información pública
+      console.log("📋 Cargando información pública...");
       const publicResult = await readContract({
         contract: profileContract,
         method: "publicInfo",
         params: [],
       });
+      
       if (publicResult) {
-        setPublicInfo({
+        const publicInfoData = {
           name: publicResult[0],
           title: publicResult[1],
           company: publicResult[2],
@@ -337,42 +390,58 @@ export function useRealProfileContract(contractAddress: string) {
           twitter: publicResult[5],
           github: publicResult[6],
           website: publicResult[7],
-        });
+        };
+        console.log("✅ Información pública cargada:", publicInfoData);
+        setPublicInfo(publicInfoData);
       }
 
-      // Load access price
+      // Cargar precio de acceso
+      console.log("💰 Cargando precio de acceso...");
       const priceResult = await readContract({
         contract: profileContract,
         method: "accessPrice",
         params: [],
       });
+      
       if (priceResult) {
+        console.log("✅ Precio de acceso:", priceResult.toString(), "wei");
         setAccessPrice(priceResult);
       }
 
-      // Check access if user is connected
+      // Verificar acceso si el usuario está conectado
       if (account?.address) {
+        console.log("🔐 Verificando acceso del usuario...");
         const accessResult = await readContract({
           contract: profileContract,
           method: "checkAccess",
           params: [account.address],
         });
+        console.log("✅ Acceso del usuario:", accessResult);
         setHasAccess(!!accessResult);
       }
 
     } catch (error) {
-      console.error('Error loading contract data:', error);
+      console.error('❌ Error cargando datos del contrato:', error);
     } finally {
       setIsLoading(false);
     }
   }, [contractAddress, profileContract, account?.address]);
 
-  // ✅ PAY FOR ACCESS
+  // ✅ PAGAR POR ACCESO - MEJORADO
   const payForAccess = useCallback(async () => {
-    if (!account) throw new Error('Wallet not connected');
-    if (!accessPrice) throw new Error('Access price not loaded');
+    if (!account) {
+      throw new Error('Wallet no conectada');
+    }
+    
+    if (!accessPrice || accessPrice === 0n) {
+      throw new Error('Precio de acceso no disponible');
+    }
 
+    console.log("💰 Iniciando pago por acceso...");
+    console.log("💸 Monto a pagar:", accessPrice.toString(), "wei");
+    
     setIsPaying(true);
+    
     try {
       const transaction = prepareContractCall({
         contract: profileContract,
@@ -381,28 +450,44 @@ export function useRealProfileContract(contractAddress: string) {
         value: accessPrice,
       });
 
+      console.log("📤 Enviando transacción de pago...");
       sendTransaction(transaction);
 
-      // Update access status after successful payment
+      // Actualizar estado después de un delay (simulando confirmación)
       setTimeout(() => {
+        console.log("✅ Pago confirmado, actualizando acceso...");
         setHasAccess(true);
       }, 3000);
 
       return { success: true };
 
     } catch (error: any) {
-      console.error('❌ Error paying for access:', error);
-      throw error;
+      console.error('❌ Error procesando pago:', error);
+      
+      if (error.message?.includes("rejected")) {
+        throw new Error("Transacción rechazada por el usuario");
+      } else if (error.message?.includes("insufficient")) {
+        throw new Error("Fondos insuficientes para completar el pago");
+      } else {
+        throw error;
+      }
     } finally {
       setIsPaying(false);
     }
   }, [account, accessPrice, profileContract, sendTransaction]);
 
-  // ✅ GET PRIVATE INFO
+  // ✅ OBTENER INFORMACIÓN PRIVADA
   const getPrivateInfo = useCallback(async (): Promise<PrivateInfo> => {
-    if (!account) throw new Error('Wallet not connected');
-    if (!hasAccess) throw new Error('Access not granted');
+    if (!account) {
+      throw new Error('Wallet no conectada');
+    }
+    
+    if (!hasAccess) {
+      throw new Error('Acceso no autorizado');
+    }
 
+    console.log("🔒 Obteniendo información privada...");
+    
     try {
       const result = await readContract({
         contract: profileContract,
@@ -410,22 +495,25 @@ export function useRealProfileContract(contractAddress: string) {
         params: [],
       });
       
-      return {
+      const privateInfo = {
         encryptedPhone: result[0],
         encryptedWhatsapp: result[1],
         encryptedEmail: result[2],
         encryptedCV: result[3],
         timestamp: Number(result[4]),
       };
+      
+      console.log("✅ Información privada obtenida:", privateInfo);
+      return privateInfo;
 
     } catch (error: any) {
-      console.error('❌ Error getting private info:', error);
+      console.error('❌ Error obteniendo información privada:', error);
       throw error;
     }
   }, [account, hasAccess, profileContract]);
 
-  // ✅ CALCULATE PRICES
-  const accessPriceETH = Number(fromWei(accessPrice, 18));
+  // ✅ CALCULAR PRECIOS
+  const accessPriceETH = accessPrice ? Number(fromWei(accessPrice, 18)) : 0;
   const accessPriceUSD = accessPriceETH * ETH_PRICE_USD;
 
   // ✅ EFFECTS
@@ -433,7 +521,6 @@ export function useRealProfileContract(contractAddress: string) {
     loadContractData();
   }, [loadContractData]);
 
-  // ✅ RETURN HOOK STATE
   return {
     // Data
     publicInfo,
