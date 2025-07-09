@@ -145,14 +145,13 @@ Este proyecto está bajo la Licencia MIT - ver el archivo [LICENSE](LICENSE) par
 ## 🔗 Enlaces útiles
 
 - [Demo en vivo](https://tu-dominio.vercel.app)
-- [Documentación técnica](./docs/README.md)
 - [Smart Contracts](https://sepolia.scrollscan.dev/address/0x0CBBb59863DC8612441D4fa1F47483856E2EB34f)
 - [ThirdWeb Documentation](https://portal.thirdweb.com/)
 - [Scroll Sepolia](https://scroll.io/)
 
 ## 👨‍💻 Desarrollado por
 
-**Tu Nombre** - [@tu_twitter](https://twitter.com/tu_twitter)
+**Tu Nombre** - [@0xscarf](https://twitter.com/0xscarf)
 
 ---
 
