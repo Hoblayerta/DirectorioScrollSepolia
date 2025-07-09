@@ -1,4 +1,4 @@
-// hooks/useRealContracts.ts - REEMPLAZAR TODO EL CONTENIDO
+// hooks/useRealContracts.ts - VERSIÓN BALANCEADA QUE FUNCIONA
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
@@ -13,11 +13,11 @@ import {
   defineChain,
   readContract
 } from 'thirdweb';
-import { toWei, fromWei } from 'thirdweb/utils';
+import { toWei, toEther } from 'thirdweb/utils';
 import { client } from '../src/app/client';
 import { FACTORY_CONTRACT_ABI, PROFILE_CONTRACT_ABI } from '../contracts/abis';
 
-// ✅ SCROLL SEPOLIA CHAIN CONFIGURATION - CORREGIDA
+// ✅ SCROLL SEPOLIA CHAIN
 const scrollSepolia = defineChain({
   id: 534351,
   name: "Scroll Sepolia",
@@ -36,13 +36,10 @@ const scrollSepolia = defineChain({
   testnet: true,
 });
 
-// ✅ FACTORY CONTRACT ADDRESS - USANDO TU DIRECCIÓN
 const FACTORY_ADDRESS = "0x0CBBb59863DC8612441D4fa1F47483856E2EB34f";
+const ETH_PRICE_USD = 2500;
 
-// ✅ ETH PRICE (hardcoded for demo)
-const ETH_PRICE_USD = 2000;
-
-// ✅ TIPOS DE DATOS
+// ✅ TIPOS
 interface ProfileData {
   id: number;
   contractAddress: string;
@@ -71,7 +68,10 @@ interface PrivateInfo {
   timestamp: number;
 }
 
-// ✅ HOOK PRINCIPAL PARA EL FACTORY CONTRACT - MEJORADO
+// ✅ FUNCIÓN PARA DELAY MÁS CORTO
+const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+
+// ✅ HOOK PRINCIPAL DEL FACTORY - VERSIÓN BALANCEADA
 export function useRealProfileFactory() {
   const account = useActiveAccount();
   const [profileData, setProfileData] = useState<ProfileData[]>([]);
@@ -79,7 +79,6 @@ export function useRealProfileFactory() {
   const [isLoading, setIsLoading] = useState(true);
   const [isCreating, setIsCreating] = useState(false);
 
-  // ✅ CONTRACT INSTANCE
   const factoryContract = getContract({
     client,
     chain: scrollSepolia,
@@ -87,49 +86,114 @@ export function useRealProfileFactory() {
     abi: FACTORY_CONTRACT_ABI,
   });
 
-  // ✅ READ CONTRACT DATA CON MEJOR MANEJO DE ERRORES
-  const totalProfilesQuery = useReadContract({
+  const { data: totalProfilesData } = useReadContract({
     contract: factoryContract,
     method: "getTotalProfiles",
     params: [],
   });
 
-  const activeProfilesQuery = useReadContract({
+  const { data: activeProfilesData } = useReadContract({
     contract: factoryContract,
-    method: "getActiveProfiles",
+    method: "getActiveProfiles", 
     params: [],
   });
 
-  const ownerProfilesQuery = useReadContract({
+  const { data: ownerProfilesData } = useReadContract({
     contract: factoryContract,
     method: "getOwnerProfiles",
     params: [account?.address || "0x0000000000000000000000000000000000000000"],
   });
 
-  // ✅ TRANSACTION SENDING
-  const { mutate: sendTransaction, data: transactionResult } = useSendTransaction();
+  const { mutate: sendTransaction } = useSendTransaction();
 
-  // ✅ CARGAR DETALLES DE PERFILES - MEJORADO
+  // ✅ CARGAR DETALLES CON BALANCE ENTRE VELOCIDAD Y ESTABILIDAD
   const loadProfileDetails = useCallback(async () => {
-    const activeProfiles = activeProfilesQuery.data as bigint[] | undefined;
-    
-    if (!activeProfiles?.length) {
-      console.log("📋 No hay perfiles activos");
+    if (!activeProfilesData || activeProfilesData.length === 0) {
+      console.log("📋 No hay perfiles activos para cargar");
       setProfileData([]);
       setIsLoading(false);
       return;
     }
 
-    console.log(`📋 Cargando ${activeProfiles.length} perfiles...`);
+    console.log(`📋 Cargando ${activeProfilesData.length} perfiles activos...`);
     setIsLoading(true);
     
     try {
       const profiles: ProfileData[] = [];
       
-      for (const profileId of activeProfiles) {
+      // ✅ CARGAR EN LOTES PEQUEÑOS PERO EFICIENTES
+      const batchSize = 2; // Lotes de 2 perfiles
+      const maxProfiles = Math.min(activeProfilesData.length, 15); // Máximo 15 perfiles
+      
+      for (let i = 0; i < maxProfiles; i += batchSize) {
+        const batch = activeProfilesData.slice(i, i + batchSize);
+        
+        // ✅ PROCESAR CADA LOTE EN PARALELO (PERO LOTES SECUENCIALES)
+        const batchPromises = batch.map(async (profileId) => {
+          try {
+            console.log(`📄 Cargando perfil ID: ${profileId.toString()}`);
+            
+            const profileResult = await readContract({
+              contract: factoryContract,
+              method: "getProfile",
+              params: [profileId],
+            });
+            
+            if (profileResult && profileResult.isActive) {
+              const profile = {
+                id: Number(profileResult.id),
+                contractAddress: profileResult.contractAddress,
+                owner: profileResult.owner,
+                name: profileResult.name,
+                createdAt: Number(profileResult.createdAt),
+                isActive: profileResult.isActive
+              };
+              
+              console.log(`✅ Perfil ${profileId} cargado:`, profile.name);
+              return profile;
+            }
+            return null;
+          } catch (error) {
+            console.error(`❌ Error cargando perfil ${profileId}:`, error);
+            return null;
+          }
+        });
+        
+        // ✅ ESPERAR EL LOTE ACTUAL
+        const batchResults = await Promise.all(batchPromises);
+        const validProfiles = batchResults.filter(p => p !== null) as ProfileData[];
+        profiles.push(...validProfiles);
+        
+        // ✅ PAUSA BREVE ENTRE LOTES (NO ENTRE CADA PERFIL)
+        if (i + batchSize < maxProfiles) {
+          await delay(300); // Solo 300ms entre lotes
+        }
+      }
+
+      console.log(`✅ Total perfiles cargados: ${profiles.length}`);
+      setProfileData(profiles);
+    } catch (error) {
+      console.error('❌ Error general:', error);
+      setProfileData([]);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [activeProfilesData, factoryContract]);
+
+  const loadUserProfiles = useCallback(async (): Promise<ProfileData[]> => {
+    if (!account?.address || !ownerProfilesData || ownerProfilesData.length === 0) {
+      setUserProfiles([]);
+      return [];
+    }
+
+    console.log(`👤 Usuario tiene ${ownerProfilesData.length} perfiles`);
+    
+    try {
+      const profiles: ProfileData[] = [];
+      
+      // ✅ CARGAR PERFILES DE USUARIO EN PARALELO (SON POCOS)
+      const profilePromises = ownerProfilesData.map(async (profileId) => {
         try {
-          console.log(`📄 Cargando perfil ${profileId.toString()}...`);
-          
           const profileResult = await readContract({
             contract: factoryContract,
             method: "getProfile",
@@ -137,7 +201,7 @@ export function useRealProfileFactory() {
           });
           
           if (profileResult) {
-            const profile = {
+            return {
               id: Number(profileResult.id),
               contractAddress: profileResult.contractAddress,
               owner: profileResult.owner,
@@ -145,103 +209,55 @@ export function useRealProfileFactory() {
               createdAt: Number(profileResult.createdAt),
               isActive: profileResult.isActive
             };
-            
-            console.log(`✅ Perfil ${profileId} cargado:`, profile);
-            profiles.push(profile);
           }
+          return null;
         } catch (error) {
-          console.error(`❌ Error cargando perfil ${profileId}:`, error);
+          console.error(`❌ Error perfil usuario ${profileId}:`, error);
+          return null;
         }
-      }
-
-      console.log(`✅ ${profiles.length} perfiles cargados exitosamente`);
-      setProfileData(profiles);
-    } catch (error) {
-      console.error('❌ Error general cargando perfiles:', error);
-    } finally {
-      setIsLoading(false);
-    }
-  }, [activeProfilesQuery.data, factoryContract]);
-
-  // ✅ CARGAR PERFILES DEL USUARIO
-  const loadUserProfiles = useCallback(async () => {
-    const ownerProfiles = ownerProfilesQuery.data as bigint[] | undefined;
-    
-    if (!account?.address || !ownerProfiles?.length) {
-      setUserProfiles([]);
-      return;
-    }
-
-    console.log(`👤 Cargando ${ownerProfiles.length} perfiles del usuario...`);
-    
-    try {
-      const profiles: ProfileData[] = [];
+      });
       
-      for (const profileId of ownerProfiles) {
-        try {
-          const profileResult = await readContract({
-            contract: factoryContract,
-            method: "getProfile",
-            params: [profileId],
-          });
-          
-          if (profileResult) {
-            profiles.push({
-              id: Number(profileResult.id),
-              contractAddress: profileResult.contractAddress,
-              owner: profileResult.owner,
-              name: profileResult.name,
-              createdAt: Number(profileResult.createdAt),
-              isActive: profileResult.isActive
-            });
-          }
-        } catch (error) {
-          console.error(`❌ Error cargando perfil del usuario ${profileId}:`, error);
-        }
-      }
+      const results = await Promise.all(profilePromises);
+      const validProfiles = results.filter(p => p !== null) as ProfileData[];
+      profiles.push(...validProfiles);
 
-      console.log(`✅ ${profiles.length} perfiles del usuario cargados`);
+      console.log(`✅ Perfiles usuario cargados: ${profiles.length}`);
       setUserProfiles(profiles);
+      return profiles;
     } catch (error) {
-      console.error('❌ Error cargando perfiles del usuario:', error);
+      console.error('❌ Error perfiles usuario:', error);
+      setUserProfiles([]);
+      return [];
     }
-  }, [account?.address, ownerProfilesQuery.data, factoryContract]);
+  }, [account?.address, ownerProfilesData, factoryContract]);
 
-  // ✅ CREAR PERFIL - MEJORADO
   const createProfile = useCallback(async (data: {
     name: string;
     title: string;
     company: string;
     experience: string;
     accessPriceUSD: number;
+    privateInfo?: {
+      phone: string;
+      whatsapp: string;
+      email: string;
+      fullCV: string;
+    };
   }) => {
-    if (!account) {
-      throw new Error('Wallet no conectada');
-    }
+    if (!account) throw new Error('Wallet no conectada');
 
-    // Verificar si ya tiene perfiles
     if (userProfiles && userProfiles.length > 0) {
-      throw new Error('Ya tienes un perfil creado. Solo se permite un perfil por wallet.');
+      throw new Error('Ya tienes un perfil. Solo un perfil por wallet.');
     }
 
     setIsCreating(true);
     
     try {
-      // Convertir USD a wei
       const accessPriceETH = data.accessPriceUSD / ETH_PRICE_USD;
       const accessPriceWei = toWei(accessPriceETH.toString());
 
-      console.log("💰 Creando perfil con parámetros:", {
-        name: data.name,
-        title: data.title,
-        company: data.company,
-        experience: data.experience,
-        accessPriceUSD: data.accessPriceUSD,
-        accessPriceETH,
-        accessPriceWei: accessPriceWei.toString()
-      });
+      console.log("💰 Creando perfil:", data.name, "Precio:", accessPriceETH, "ETH");
 
-      // Preparar transacción
       const transaction = prepareContractCall({
         contract: factoryContract,
         method: "createProfile",
@@ -254,94 +270,150 @@ export function useRealProfileFactory() {
         ],
       });
 
-      console.log("📤 Enviando transacción...");
-      
-      // Enviar transacción
-      sendTransaction(transaction);
-
-      // Simular éxito hasta que se confirme
-      console.log("✅ Transacción enviada");
-      
-      return {
-        transactionHash: transactionResult?.transactionHash,
-        success: true
-      };
+      return new Promise((resolve, reject) => {
+        sendTransaction(transaction, {
+          onSuccess: async (result) => {
+            console.log("✅ Perfil creado, TX:", result.transactionHash);
+            
+            if (data.privateInfo && (data.privateInfo.phone || data.privateInfo.email || data.privateInfo.fullCV)) {
+              console.log("🔒 Esperando para actualizar información privada...");
+              
+              setTimeout(async () => {
+                try {
+                  await updatePrivateInfoAfterCreation(data.privateInfo!);
+                  console.log("🔒✅ Información privada actualizada");
+                } catch (error) {
+                  console.error("🔒❌ Error actualizando información privada:", error);
+                }
+              }, 12000);
+            }
+            
+            resolve({ 
+              success: true, 
+              transactionHash: result.transactionHash 
+            });
+          },
+          onError: (error) => {
+            console.error('❌ Error creando perfil:', error);
+            reject(error);
+          }
+        });
+      });
 
     } catch (error: any) {
-      console.error('❌ Error creando perfil:', error);
-      
-      // Manejar errores específicos
-      if (error.message?.includes("rejected")) {
-        throw new Error("Transacción rechazada por el usuario");
-      } else if (error.message?.includes("insufficient")) {
-        throw new Error("Fondos insuficientes para completar la transacción");
-      } else {
-        throw error;
-      }
+      console.error('❌ Error:', error);
+      throw error;
     } finally {
       setIsCreating(false);
     }
-  }, [account, factoryContract, sendTransaction, transactionResult, userProfiles]);
+  }, [account, factoryContract, sendTransaction, userProfiles]);
 
-  // ✅ REFETCH DATA
+  const updatePrivateInfoAfterCreation = async (privateInfo: {
+    phone: string;
+    whatsapp: string;
+    email: string;
+    fullCV: string;
+  }) => {
+    if (!account?.address) return;
+
+    try {
+      const currentUserProfiles = await readContract({
+        contract: factoryContract,
+        method: "getOwnerProfiles",
+        params: [account.address],
+      });
+
+      if (currentUserProfiles && currentUserProfiles.length > 0) {
+        const latestProfileId = currentUserProfiles[currentUserProfiles.length - 1];
+        
+        const profileResult = await readContract({
+          contract: factoryContract,
+          method: "getProfile",
+          params: [latestProfileId],
+        });
+
+        if (profileResult && profileResult.contractAddress) {
+          console.log("📄 Actualizando información privada en:", profileResult.contractAddress);
+          
+          const profileContract = getContract({
+            client,
+            chain: scrollSepolia,
+            address: profileResult.contractAddress,
+            abi: PROFILE_CONTRACT_ABI,
+          });
+
+          const updateTransaction = prepareContractCall({
+            contract: profileContract,
+            method: "updatePrivateInfo",
+            params: [{
+              encryptedPhone: privateInfo.phone || "",
+              encryptedWhatsapp: privateInfo.whatsapp || "",
+              encryptedEmail: privateInfo.email || "",
+              encryptedCV: privateInfo.fullCV || "",
+              timestamp: Math.floor(Date.now() / 1000)
+            }],
+          });
+
+          return new Promise((resolve, reject) => {
+            sendTransaction(updateTransaction, {
+              onSuccess: (updateResult) => {
+                console.log("🔒✅ Información privada guardada, TX:", updateResult.transactionHash);
+                resolve(updateResult);
+              },
+              onError: (updateError) => {
+                console.error("🔒❌ Error guardando información privada:", updateError);
+                reject(updateError);
+              }
+            });
+          });
+        }
+      }
+    } catch (error) {
+      console.error("❌ Error en actualización privada:", error);
+      throw error;
+    }
+  };
+
   const refetchData = useCallback(() => {
     console.log("🔄 Refrescando datos...");
+    // Forzar recarga inmediata
     loadProfileDetails();
     loadUserProfiles();
   }, [loadProfileDetails, loadUserProfiles]);
 
-  // ✅ EFFECTS
+  // ✅ CARGAR DATOS CON MENOS DELAY
   useEffect(() => {
-    if (activeProfilesQuery.data) {
-      loadProfileDetails();
+    if (activeProfilesData !== undefined) {
+      setTimeout(() => {
+        loadProfileDetails();
+      }, 500); // Reducido a 500ms
     }
-  }, [activeProfilesQuery.data, loadProfileDetails]);
+  }, [activeProfilesData]);
 
   useEffect(() => {
-    if (ownerProfilesQuery.data || account?.address) {
-      loadUserProfiles();
+    if (ownerProfilesData !== undefined) {
+      setTimeout(() => {
+        loadUserProfiles();
+      }, 800); // Reducido a 800ms
     }
-  }, [ownerProfilesQuery.data, account?.address, loadUserProfiles]);
-
-  // ✅ LOG DEBUG INFO
-  useEffect(() => {
-    console.log("🔍 Debug Info:", {
-      isConnected: !!account,
-      contractAddress: FACTORY_ADDRESS,
-      totalProfiles: totalProfilesQuery.data?.toString(),
-      activeProfilesCount: activeProfilesQuery.data?.length,
-      userProfilesCount: userProfiles.length,
-      profileDataCount: profileData.length,
-      isLoading
-    });
-  }, [account, totalProfilesQuery.data, activeProfilesQuery.data, userProfiles, profileData, isLoading]);
+  }, [ownerProfilesData]);
 
   return {
-    // Data
-    totalProfiles: Number(totalProfilesQuery.data || 0),
-    activeProfiles: activeProfilesQuery.data || [],
+    totalProfiles: Number(totalProfilesData || 0),
+    activeProfiles: activeProfilesData || [],
     profileData,
     userProfiles,
-    
-    // State
     isLoading,
     isCreating,
     isConnected: !!account,
-    
-    // Contract info
     contractAddress: FACTORY_ADDRESS,
-    
-    // Functions
     createProfile,
     hasExistingProfile: () => userProfiles && userProfiles.length > 0,
     refetchData,
-    
-    // Transaction state
-    transactionResult,
   };
 }
 
-// ✅ HOOK PARA PROFILE CONTRACTS INDIVIDUALES - MEJORADO
+// ✅ HOOK PARA CONTRATOS INDIVIDUALES - MÁS RÁPIDO
 export function useRealProfileContract(contractAddress: string) {
   const account = useActiveAccount();
   const [isLoading, setIsLoading] = useState(true);
@@ -350,7 +422,6 @@ export function useRealProfileContract(contractAddress: string) {
   const [accessPrice, setAccessPrice] = useState<bigint>(0n);
   const [hasAccess, setHasAccess] = useState(false);
 
-  // ✅ CONTRACT INSTANCE
   const profileContract = getContract({
     client,
     chain: scrollSepolia,
@@ -358,90 +429,95 @@ export function useRealProfileContract(contractAddress: string) {
     abi: PROFILE_CONTRACT_ABI,
   });
 
-  // ✅ TRANSACTION SENDING
   const { mutate: sendTransaction } = useSendTransaction();
 
-  // ✅ CARGAR DATOS DEL CONTRATO - MEJORADO
   const loadContractData = useCallback(async () => {
-    if (!contractAddress || contractAddress === "0x0") {
+    if (!contractAddress || contractAddress === "0x0" || contractAddress.length !== 42) {
       setIsLoading(false);
       return;
     }
 
-    console.log(`📄 Cargando datos del contrato: ${contractAddress}`);
+    console.log(`📄 Cargando datos de contrato: ${contractAddress}`);
     setIsLoading(true);
     
     try {
-      // Cargar información pública
-      console.log("📋 Cargando información pública...");
-      const publicResult = await readContract({
-        contract: profileContract,
-        method: "publicInfo",
-        params: [],
-      });
+      // ✅ CARGAR EN PARALELO PARA MAYOR VELOCIDAD
+      const [publicResult, priceResult] = await Promise.all([
+        readContract({
+          contract: profileContract,
+          method: "publicInfo",
+          params: [],
+        }),
+        readContract({
+          contract: profileContract,
+          method: "accessPrice",
+          params: [],
+        })
+      ]);
       
       if (publicResult) {
-        const publicInfoData = {
-          name: publicResult[0],
-          title: publicResult[1],
-          company: publicResult[2],
-          experience: publicResult[3],
-          linkedin: publicResult[4],
-          twitter: publicResult[5],
-          github: publicResult[6],
-          website: publicResult[7],
+        const info = {
+          name: publicResult[0] || "",
+          title: publicResult[1] || "",
+          company: publicResult[2] || "",
+          experience: publicResult[3] || "",
+          linkedin: publicResult[4] || "",
+          twitter: publicResult[5] || "",
+          github: publicResult[6] || "",
+          website: publicResult[7] || "",
         };
-        console.log("✅ Información pública cargada:", publicInfoData);
-        setPublicInfo(publicInfoData);
+        setPublicInfo(info);
+        console.log(`✅ Info pública cargada para ${info.name}`);
       }
 
-      // Cargar precio de acceso
-      console.log("💰 Cargando precio de acceso...");
-      const priceResult = await readContract({
-        contract: profileContract,
-        method: "accessPrice",
-        params: [],
-      });
-      
       if (priceResult) {
-        console.log("✅ Precio de acceso:", priceResult.toString(), "wei");
         setAccessPrice(priceResult);
+        console.log(`💰 Precio: ${priceResult.toString()} wei`);
       }
 
-      // Verificar acceso si el usuario está conectado
+      // ✅ VERIFICAR ACCESO SI HAY CUENTA
       if (account?.address) {
-        console.log("🔐 Verificando acceso del usuario...");
-        const accessResult = await readContract({
-          contract: profileContract,
-          method: "checkAccess",
-          params: [account.address],
-        });
-        console.log("✅ Acceso del usuario:", accessResult);
-        setHasAccess(!!accessResult);
+        try {
+          const [accessResult, ownerResult] = await Promise.all([
+            readContract({
+              contract: profileContract,
+              method: "hasAccess",
+              params: [account.address],
+            }),
+            readContract({
+              contract: profileContract,
+              method: "owner",
+              params: [],
+            })
+          ]);
+          
+          const isOwner = ownerResult.toLowerCase() === account.address.toLowerCase();
+          const hasPaidAccess = !!accessResult;
+          const finalAccess = isOwner || hasPaidAccess;
+          
+          setHasAccess(finalAccess);
+          console.log(`🔐 Verificación de acceso:`);
+          console.log(`  - Es owner: ${isOwner}`);
+          console.log(`  - Pagó acceso: ${hasPaidAccess}`);
+          console.log(`  - Acceso final: ${finalAccess}`);
+        } catch (accessError) {
+          console.error("❌ Error verificando acceso:", accessError);
+          setHasAccess(false);
+        }
       }
 
     } catch (error) {
-      console.error('❌ Error cargando datos del contrato:', error);
+      console.error(`❌ Error cargando ${contractAddress}:`, error);
     } finally {
       setIsLoading(false);
     }
   }, [contractAddress, profileContract, account?.address]);
 
-  // ✅ PAGAR POR ACCESO - MEJORADO
   const payForAccess = useCallback(async () => {
-    if (!account) {
-      throw new Error('Wallet no conectada');
-    }
-    
-    if (!accessPrice || accessPrice === 0n) {
-      throw new Error('Precio de acceso no disponible');
-    }
+    if (!account) throw new Error('Wallet no conectada');
+    if (!accessPrice || accessPrice === 0n) throw new Error('Precio no disponible');
 
-    console.log("💰 Iniciando pago por acceso...");
-    console.log("💸 Monto a pagar:", accessPrice.toString(), "wei");
-    
     setIsPaying(true);
-    
     try {
       const transaction = prepareContractCall({
         contract: profileContract,
@@ -450,76 +526,148 @@ export function useRealProfileContract(contractAddress: string) {
         value: accessPrice,
       });
 
-      console.log("📤 Enviando transacción de pago...");
-      sendTransaction(transaction);
-
-      // Actualizar estado después de un delay (simulando confirmación)
-      setTimeout(() => {
-        console.log("✅ Pago confirmado, actualizando acceso...");
-        setHasAccess(true);
-      }, 3000);
-
-      return { success: true };
-
+      return new Promise((resolve, reject) => {
+        sendTransaction(transaction, {
+          onSuccess: (result) => {
+            console.log("✅ Pago exitoso:", result.transactionHash);
+            setHasAccess(true);
+            setTimeout(() => loadContractData(), 3000); // Reducido a 3 segundos
+            resolve({ success: true, transactionHash: result.transactionHash });
+          },
+          onError: (error) => {
+            console.error('❌ Error en pago:', error);
+            reject(error);
+          }
+        });
+      });
     } catch (error: any) {
-      console.error('❌ Error procesando pago:', error);
-      
-      if (error.message?.includes("rejected")) {
-        throw new Error("Transacción rechazada por el usuario");
-      } else if (error.message?.includes("insufficient")) {
-        throw new Error("Fondos insuficientes para completar el pago");
-      } else {
-        throw error;
-      }
+      console.error('❌ Error pago:', error);
+      throw error;
     } finally {
       setIsPaying(false);
     }
-  }, [account, accessPrice, profileContract, sendTransaction]);
+  }, [account, accessPrice, profileContract, sendTransaction, loadContractData]);
 
-  // ✅ OBTENER INFORMACIÓN PRIVADA
   const getPrivateInfo = useCallback(async (): Promise<PrivateInfo> => {
-    if (!account) {
-      throw new Error('Wallet no conectada');
-    }
-    
-    if (!hasAccess) {
-      throw new Error('Acceso no autorizado');
-    }
-
-    console.log("🔒 Obteniendo información privada...");
+    if (!account) throw new Error('Wallet no conectada');
     
     try {
+      const [ownerResult, accessResult] = await Promise.all([
+        readContract({
+          contract: profileContract,
+          method: "owner",
+          params: [],
+        }),
+        readContract({
+          contract: profileContract,
+          method: "hasAccess",
+          params: [account.address],
+        })
+      ]);
+      
+      const isOwner = ownerResult.toLowerCase() === account.address.toLowerCase();
+      const hasPaidAccess = !!accessResult;
+      
+      console.log("🔍 Verificación de acceso para info privada:");
+      console.log("  - Wallet:", account.address);
+      console.log("  - Owner del contrato:", ownerResult);
+      console.log("  - Es owner:", isOwner);
+      console.log("  - Tiene acceso pagado:", hasPaidAccess);
+      
+      if (!isOwner && !hasPaidAccess) {
+        throw new Error('Sin acceso - debes ser el owner o haber pagado por acceso');
+      }
+      
       const result = await readContract({
         contract: profileContract,
         method: "getPrivateInfo",
         params: [],
       });
       
-      const privateInfo = {
-        encryptedPhone: result[0],
-        encryptedWhatsapp: result[1],
-        encryptedEmail: result[2],
-        encryptedCV: result[3],
-        timestamp: Number(result[4]),
-      };
+      console.log("📋 Información privada obtenida:", result);
       
-      console.log("✅ Información privada obtenida:", privateInfo);
-      return privateInfo;
-
+      return {
+        encryptedPhone: result[0] || "Sin datos",
+        encryptedWhatsapp: result[1] || "Sin datos", 
+        encryptedEmail: result[2] || "Sin datos",
+        encryptedCV: result[3] || "Sin datos",
+        timestamp: Number(result[4]) || 0,
+      };
     } catch (error: any) {
-      console.error('❌ Error obteniendo información privada:', error);
+      console.error('❌ Error info privada:', error);
       throw error;
     }
-  }, [account, hasAccess, profileContract]);
+  }, [account, profileContract]);
 
-  // ✅ CALCULAR PRECIOS
-  const accessPriceETH = accessPrice ? Number(fromWei(accessPrice, 18)) : 0;
+  const updatePrivateInfo = useCallback(async (privateInfo: {
+    phone: string;
+    whatsapp: string;
+    email: string;
+    fullCV: string;
+  }) => {
+    if (!account) throw new Error('Wallet no conectada');
+    
+    try {
+      const ownerResult = await readContract({
+        contract: profileContract,
+        method: "owner",
+        params: [],
+      });
+      
+      const isOwner = ownerResult.toLowerCase() === account.address.toLowerCase();
+      if (!isOwner) {
+        throw new Error('Solo el propietario puede actualizar la información privada');
+      }
+      
+      console.log("💾 Actualizando información privada en smart contract...");
+      console.log("📋 Datos a enviar:", privateInfo);
+      
+      const privateInfoStruct = {
+        encryptedPhone: privateInfo.phone || "",
+        encryptedWhatsapp: privateInfo.whatsapp || "",
+        encryptedEmail: privateInfo.email || "",
+        encryptedCV: privateInfo.fullCV || "",
+        timestamp: BigInt(Math.floor(Date.now() / 1000))
+      };
+      
+      console.log("🔧 Struct formateado:", privateInfoStruct);
+      
+      const transaction = prepareContractCall({
+        contract: profileContract,
+        method: "updatePrivateInfo",
+        params: [privateInfoStruct],
+      });
+      
+      console.log("📤 Enviando transacción...");
+      
+      return new Promise((resolve, reject) => {
+        sendTransaction(transaction, {
+          onSuccess: (result) => {
+            console.log("✅ Información privada actualizada, TX:", result.transactionHash);
+            setTimeout(() => {
+              resolve({ success: true, transactionHash: result.transactionHash });
+            }, 2000); // Reducido a 2 segundos
+          },
+          onError: (error) => {
+            console.error('❌ Error actualizando información privada:', error);
+            reject(error);
+          }
+        });
+      });
+      
+    } catch (error: any) {
+      console.error('❌ Error actualizando información privada:', error);
+      throw error;
+    }
+  }, [account, profileContract, sendTransaction]);
+
+  const accessPriceETH = accessPrice ? Number(toEther(accessPrice)) : 0;
   const accessPriceUSD = accessPriceETH * ETH_PRICE_USD;
 
-  // ✅ EFFECTS
+  // ✅ CARGAR DATOS INMEDIATAMENTE
   useEffect(() => {
     loadContractData();
-  }, [loadContractData]);
+  }, [contractAddress]);
 
   return {
     // Data
@@ -536,6 +684,7 @@ export function useRealProfileContract(contractAddress: string) {
     // Functions
     payForAccess,
     getPrivateInfo,
+    updatePrivateInfo,
     refetch: loadContractData,
   };
 }

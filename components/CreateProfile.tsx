@@ -1,10 +1,10 @@
-// components/CreateProfile.tsx - REEMPLAZAR TODO EL CONTENIDO
+// components/CreateProfile.tsx - VERSIÓN SIMPLIFICADA Y CORREGIDA
 'use client';
 
 import { useState, useEffect } from 'react';
 import { useActiveAccount } from 'thirdweb/react';
-import { useRealProfileFactory } from '../hooks/useRealContracts';
-import { User, Briefcase, Building, FileText, DollarSign, Loader2, Lock, CheckCircle, AlertTriangle } from 'lucide-react';
+import { useRealProfileFactory, useRealProfileContract } from '../hooks/useRealContracts';
+import { User, Briefcase, Building, FileText, DollarSign, Loader2, Lock, CheckCircle, AlertTriangle, Phone, Mail, MessageCircle, Info } from 'lucide-react';
 
 interface CreateProfileProps {
   onSuccess?: () => void;
@@ -23,25 +23,27 @@ export default function CreateProfile({ onSuccess, onCancel }: CreateProfileProp
     refetchData
   } = useRealProfileFactory();
   
+  const [showSuccess, setShowSuccess] = useState(false);
+  const [transactionHash, setTransactionHash] = useState<string>('');
+  const [checkingProfile, setCheckingProfile] = useState(true);
+  const [estimatedGas, setEstimatedGas] = useState<string>('');
+  const [createdContractAddress, setCreatedContractAddress] = useState<string>('');
+
   const [formData, setFormData] = useState({
+    // 📋 INFORMACIÓN PÚBLICA (obligatoria)
     name: '',
     title: '',
     company: '',
     experience: '',
     accessPriceUSD: 10,
-    // Información privada (para referencia futura)
+    // 🔒 INFORMACIÓN PRIVADA (opcional)
     phone: '',
     whatsapp: '',
     email: '',
     fullCV: ''
   });
 
-  const [showSuccess, setShowSuccess] = useState(false);
-  const [transactionHash, setTransactionHash] = useState<string>('');
-  const [checkingProfile, setCheckingProfile] = useState(true);
-  const [estimatedGas, setEstimatedGas] = useState<string>('');
-
-  // ✅ VERIFICAR PERFIL EXISTENTE AL CARGAR
+  // ✅ VERIFICAR PERFIL EXISTENTE
   useEffect(() => {
     const checkExistingProfile = async () => {
       if (isConnected && account?.address) {
@@ -50,7 +52,7 @@ export default function CreateProfile({ onSuccess, onCancel }: CreateProfileProp
           await new Promise(resolve => setTimeout(resolve, 2000));
           setCheckingProfile(false);
         } catch (error) {
-          console.error('Error checking existing profile:', error);
+          console.error('Error checking profile:', error);
           setCheckingProfile(false);
         }
       } else {
@@ -97,19 +99,25 @@ export default function CreateProfile({ onSuccess, onCancel }: CreateProfileProp
 
     try {
       console.log("🚀 Creando perfil en la blockchain...");
-      console.log("📊 Datos del perfil:", formData);
-      console.log("💳 Wallet:", account.address);
-      console.log("🏭 Factory Contract:", contractAddress);
+      console.log("📊 Información:", formData);
 
+      // ✅ CREAR PERFIL (la información privada se agregará automáticamente si se proporciona)
       const result = await createProfile({
         name: formData.name,
         title: formData.title,
         company: formData.company,
         experience: formData.experience,
-        accessPriceUSD: formData.accessPriceUSD
+        accessPriceUSD: formData.accessPriceUSD,
+        // ✅ INCLUIR INFORMACIÓN PRIVADA SI SE PROPORCIONÓ
+        privateInfo: (formData.phone || formData.email || formData.fullCV) ? {
+          phone: formData.phone,
+          whatsapp: formData.whatsapp,
+          email: formData.email,
+          fullCV: formData.fullCV
+        } : undefined
       });
 
-      console.log("✅ Transacción enviada:", result);
+      console.log("✅ Resultado:", result);
       
       if (result?.transactionHash) {
         setTransactionHash(result.transactionHash);
@@ -117,28 +125,27 @@ export default function CreateProfile({ onSuccess, onCancel }: CreateProfileProp
 
       setShowSuccess(true);
 
-      // Actualizar datos después de la transacción
+      // Actualizar datos después de unos segundos
       setTimeout(() => {
         refetchData();
       }, 5000);
 
-      // Cerrar modal de éxito después de 6 segundos
+      // Finalizar proceso
       setTimeout(() => {
-        setShowSuccess(false);
         onSuccess?.();
-      }, 6000);
+      }, 8000);
 
     } catch (error: any) {
-      console.error('❌ Error creating profile:', error);
+      console.error('❌ Error:', error);
       
-      if (error.message && error.message.includes("Ya tienes un perfil")) {
+      if (error.message?.includes("Ya tienes un perfil")) {
         alert('Ya tienes un perfil creado. Solo se permite un perfil por wallet.');
-      } else if (error.message && error.message.includes("rejected")) {
+      } else if (error.message?.includes("rejected")) {
         alert('Transacción rechazada por el usuario.');
-      } else if (error.message && error.message.includes("insufficient")) {
+      } else if (error.message?.includes("insufficient")) {
         alert('Fondos insuficientes para completar la transacción.');
       } else {
-        alert(`Error al crear el perfil: ${error.message || 'Error desconocido'}`);
+        alert(`Error: ${error.message || 'Error desconocido'}`);
       }
     }
   };
@@ -164,7 +171,7 @@ export default function CreateProfile({ onSuccess, onCancel }: CreateProfileProp
     return (
       <div className="bg-white rounded-lg shadow-lg p-6 max-w-2xl mx-auto text-center">
         <Loader2 className="w-8 h-8 animate-spin text-blue-600 mx-auto mb-4" />
-        <p className="text-gray-600">Verificando perfiles existentes en la blockchain...</p>
+        <p className="text-gray-600">Verificando perfiles existentes...</p>
         <p className="text-sm text-gray-500 mt-2">Consultando {contractAddress?.slice(0, 6)}...{contractAddress?.slice(-4)}</p>
       </div>
     );
@@ -186,8 +193,8 @@ export default function CreateProfile({ onSuccess, onCancel }: CreateProfileProp
         <div className="bg-white rounded-lg p-4 mb-4">
           <div className="text-sm text-gray-600">
             <p><strong>Tu Wallet:</strong> {account.address.slice(0, 6)}...{account.address.slice(-4)}</p>
-            <p><strong>Perfiles Encontrados:</strong> {userProfiles.length}</p>
-            <p><strong>Estado:</strong> Perfil activo en la blockchain</p>
+            <p><strong>Perfiles:</strong> {userProfiles.length}</p>
+            <p><strong>Estado:</strong> Activo en blockchain</p>
           </div>
         </div>
         <button
@@ -200,6 +207,7 @@ export default function CreateProfile({ onSuccess, onCancel }: CreateProfileProp
     );
   }
 
+  // ✅ PANTALLA DE ÉXITO
   if (showSuccess) {
     return (
       <div className="bg-green-50 border border-green-200 rounded-lg p-8 text-center max-w-2xl mx-auto">
@@ -207,10 +215,10 @@ export default function CreateProfile({ onSuccess, onCancel }: CreateProfileProp
           <CheckCircle className="w-8 h-8 text-green-600" />
         </div>
         <h3 className="text-xl font-semibold text-green-800 mb-2">
-          ¡Perfil creado en la blockchain!
+          ¡Perfil creado exitosamente!
         </h3>
         <p className="text-green-700 mb-4">
-          Tu perfil profesional ha sido desplegado exitosamente en Scroll Sepolia.
+          Tu perfil profesional ha sido desplegado en Scroll Sepolia.
         </p>
         
         <div className="bg-white border border-green-200 rounded-lg p-4 mb-4">
@@ -218,33 +226,53 @@ export default function CreateProfile({ onSuccess, onCancel }: CreateProfileProp
             <p>✅ <strong>Smart contract desplegado</strong></p>
             <p>✅ <strong>Información pública guardada</strong></p>
             <p>✅ <strong>Precio configurado:</strong> ${formData.accessPriceUSD} USD</p>
+            {(formData.phone || formData.email || formData.fullCV) && (
+              <p>✅ <strong>Información privada en proceso...</strong></p>
+            )}
             {transactionHash && (
-              <p>✅ <strong>TX Hash:</strong> 
+              <p>✅ <strong>TX:</strong> 
                 <a 
                   href={`https://sepolia.scrollscan.dev/tx/${transactionHash}`}
                   target="_blank" 
                   rel="noopener noreferrer"
                   className="text-blue-600 hover:underline ml-1"
                 >
-                  {transactionHash.slice(0, 6)}...{transactionHash.slice(-4)}
+                  Ver en explorador
                 </a>
               </p>
             )}
           </div>
         </div>
 
-        <div className="bg-blue-50 rounded-lg p-3 mb-4">
-          <p className="text-sm text-blue-800">
-            🎉 <strong>¡Tu perfil estará visible en el directorio en unos minutos!</strong>
-          </p>
-          <p className="text-xs text-blue-600 mt-1">
-            Los bloques en Scroll Sepolia se confirman cada ~3 segundos
+        {/* ✅ NOTA IMPORTANTE SOBRE INFORMACIÓN PRIVADA */}
+        {(formData.phone || formData.email || formData.fullCV) && (
+          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4">
+            <div className="flex items-start">
+              <Info className="w-5 h-5 text-blue-600 mr-2 mt-0.5" />
+              <div className="text-left">
+                <h4 className="text-sm font-medium text-blue-900 mb-1">
+                  Información Privada
+                </h4>
+                <p className="text-xs text-blue-800">
+                  La información privada se está guardando en una segunda transacción. 
+                  Puede tomar unos minutos en aparecer. Si no aparece, puedes agregarla 
+                  manualmente desde tu perfil más tarde.
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
+
+        <div className="bg-green-50 rounded-lg p-3">
+          <p className="text-sm text-green-800">
+            🎉 <strong>Tu perfil ya está disponible en el directorio profesional</strong>
           </p>
         </div>
       </div>
     );
   }
 
+  // ✅ FORMULARIO COMPLETO
   return (
     <div className="bg-white rounded-lg shadow-lg p-6 max-w-2xl mx-auto">
       <div className="mb-6">
@@ -252,23 +280,23 @@ export default function CreateProfile({ onSuccess, onCancel }: CreateProfileProp
           Crear Perfil Profesional en Blockchain
         </h2>
         <p className="text-gray-600">
-          Despliega tu perfil descentralizado en Scroll Sepolia
+          Crea tu perfil descentralizado. La información privada es opcional y se puede agregar después.
         </p>
         <div className="mt-3 p-3 bg-blue-50 rounded-lg">
           <div className="text-sm text-blue-800">
-            <p><strong>🏭 Factory Contract:</strong> {contractAddress?.slice(0, 6)}...{contractAddress?.slice(-4)}</p>
-            <p><strong>⛽ Gas Estimado:</strong> ~{estimatedGas} ETH (${(parseFloat(estimatedGas) * 2000).toFixed(2)} USD)</p>
+            <p><strong>🏭 Factory:</strong> {contractAddress?.slice(0, 6)}...{contractAddress?.slice(-4)}</p>
+            <p><strong>⛽ Gas estimado:</strong> ~{estimatedGas} ETH</p>
             <p><strong>⛓️ Red:</strong> Scroll Sepolia</p>
           </div>
         </div>
       </div>
 
-      <form onSubmit={handleSubmit} className="space-y-6">
-        {/* Información Pública */}
+      <form onSubmit={handleSubmit} className="space-y-8">
+        {/* ✅ SECCIÓN INFORMACIÓN PÚBLICA */}
         <div className="space-y-4">
-          <h3 className="text-lg font-semibold text-gray-800 flex items-center">
+          <h3 className="text-lg font-semibold text-gray-800 flex items-center border-b border-gray-200 pb-2">
             <User className="w-5 h-5 mr-2" />
-            Información Pública (Visible para todos)
+            📋 Información Pública (visible para todos)
           </h3>
           
           <div>
@@ -325,7 +353,7 @@ export default function CreateProfile({ onSuccess, onCancel }: CreateProfileProp
               onChange={handleInputChange}
               rows={4}
               className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-              placeholder="Describe tu experiencia, habilidades técnicas, logros principales..."
+              placeholder="Describe tu experiencia, habilidades técnicas, logros..."
             />
           </div>
 
@@ -346,30 +374,95 @@ export default function CreateProfile({ onSuccess, onCancel }: CreateProfileProp
               />
             </div>
             <p className="text-sm text-gray-500 mt-1">
-              Precio: ${formData.accessPriceUSD} USD (~{(formData.accessPriceUSD / 2000).toFixed(6)} ETH)
+              ${formData.accessPriceUSD} USD (~{(formData.accessPriceUSD / 2000).toFixed(6)} ETH)
             </p>
           </div>
         </div>
 
-        {/* Información sobre costos de blockchain */}
-        <div className="border-t pt-6">
+        {/* ✅ SECCIÓN INFORMACIÓN PRIVADA - OPCIONAL Y CON AVISO */}
+        <div className="space-y-4">
+          <h3 className="text-lg font-semibold text-gray-800 flex items-center border-b border-gray-200 pb-2">
+            <Lock className="w-5 h-5 mr-2" />
+            🔒 Información Privada (opcional)
+          </h3>
+          
           <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
             <div className="flex items-start">
-              <AlertTriangle className="w-5 h-5 text-yellow-600 mr-3 mt-0.5" />
+              <Info className="w-5 h-5 text-yellow-600 mr-3 mt-0.5" />
               <div className="text-sm text-yellow-800">
-                <h4 className="font-medium mb-1">Costos de transacción en blockchain:</h4>
-                <ul className="space-y-1 text-xs">
-                  <li>• Gas fee estimado: ~{estimatedGas} ETH (${(parseFloat(estimatedGas) * 2000).toFixed(2)} USD)</li>
-                  <li>• Tu perfil será permanente en la blockchain</li>
-                  <li>• Una vez creado, no se puede eliminar</li>
-                  <li>• Los datos serán públicos y verificables</li>
+                <h4 className="font-medium mb-1">Información Importante:</h4>
+                <ul className="text-xs space-y-1">
+                  <li>• La información privada es opcional y se puede agregar después</li>
+                  <li>• Se guarda en una segunda transacción separada</li>
+                  <li>• Solo visible para quienes paguen ${formData.accessPriceUSD} USD</li>
+                  <li>• Si no aparece inmediatamente, será visible en unos minutos</li>
                 </ul>
               </div>
             </div>
           </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              <Phone className="w-4 h-4 inline mr-1" />
+              Teléfono
+            </label>
+            <input
+              type="text"
+              name="phone"
+              value={formData.phone}
+              onChange={handleInputChange}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
+              placeholder="+52 55 1234 5678"
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              <MessageCircle className="w-4 h-4 inline mr-1" />
+              WhatsApp
+            </label>
+            <input
+              type="text"
+              name="whatsapp"
+              value={formData.whatsapp}
+              onChange={handleInputChange}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
+              placeholder="+52 55 1234 5678"
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              <Mail className="w-4 h-4 inline mr-1" />
+              Email de contacto
+            </label>
+            <input
+              type="email"
+              name="email"
+              value={formData.email}
+              onChange={handleInputChange}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
+              placeholder="contacto@tudominio.com"
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              <FileText className="w-4 h-4 inline mr-1" />
+              CV Completo / Información Detallada
+            </label>
+            <textarea
+              name="fullCV"
+              value={formData.fullCV}
+              onChange={handleInputChange}
+              rows={6}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
+              placeholder="Experiencia detallada, proyectos específicos, logros, certificaciones, portfolio links, etc..."
+            />
+          </div>
         </div>
 
-        {/* Botones */}
+        {/* ✅ BOTONES */}
         <div className="flex justify-between pt-6">
           {onCancel && (
             <button
@@ -384,20 +477,29 @@ export default function CreateProfile({ onSuccess, onCancel }: CreateProfileProp
           <button
             type="submit"
             disabled={isCreating || !formData.name || !formData.title}
-            className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center ml-auto"
+            className="px-8 py-3 bg-gradient-to-r from-blue-600 to-purple-600 text-white rounded-lg hover:from-blue-700 hover:to-purple-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center ml-auto text-lg font-semibold shadow-lg transform transition-all hover:scale-105"
           >
             {isCreating ? (
               <>
-                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                Desplegando en blockchain...
+                <Loader2 className="w-5 h-5 mr-3 animate-spin" />
+                Desplegando en Blockchain...
               </>
             ) : (
               <>
-                <FileText className="w-4 h-4 mr-2" />
-                Crear Perfil en Blockchain
+                <FileText className="w-5 h-5 mr-3" />
+                🚀 Crear Mi Perfil
               </>
             )}
           </button>
+        </div>
+        
+        <div className="mt-4 text-center">
+          <p className="text-sm text-gray-600">
+            Se creará tu smart contract personal con la información proporcionada
+          </p>
+          <p className="text-xs text-gray-500 mt-1">
+            ⛽ Costo estimado: ~{estimatedGas} ETH (${(parseFloat(estimatedGas) * 2000).toFixed(2)} USD)
+          </p>
         </div>
       </form>
     </div>
