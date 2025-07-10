@@ -119,7 +119,7 @@ DirectorioPro Web3
 - [x] Creación de perfiles
 - [x] Directorio de profesionales
 - [x] Sistema de pagos para acceso
-- [x] Información privada encriptada
+- [x] Información encriptada
 - [x] UI responsive y moderna
 - [x] Manejo de errores optimizado
 
@@ -129,6 +129,7 @@ DirectorioPro Web3
 - [ ] Integración con IPFS
 - [ ] Notificaciones push
 - [ ] API pública
+- [ ] Implementacion de privacidad robusta privada no custodial
 
 ## 🤝 Contribuir
 
@@ -144,14 +145,14 @@ Este proyecto está bajo la Licencia MIT - ver el archivo [LICENSE](LICENSE) par
 
 ## 🔗 Enlaces útiles
 
-- [Demo en vivo](https://tu-dominio.vercel.app)
+- [Demo en vivo](https://directorio-pro-web3.vercel.app/)
 - [Smart Contracts](https://sepolia.scrollscan.dev/address/0x0CBBb59863DC8612441D4fa1F47483856E2EB34f)
 - [ThirdWeb Documentation](https://portal.thirdweb.com/)
 - [Scroll Sepolia](https://scroll.io/)
 
 ## 👨‍💻 Desarrollado por
 
-**Tu Nombre** - [@0xscarf](https://twitter.com/0xscarf)
+**0xScarf** - [@0xscarf](https://twitter.com/0xscarf)
 
 ---
 
