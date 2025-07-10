@@ -129,7 +129,7 @@ DirectorioPro Web3
 - [ ] Integración con IPFS
 - [ ] Notificaciones push
 - [ ] API pública
-- [ ] Implementacion de privacidad robusta privada no custodial
+- [ ] Implementacion de privacidad robusta no custodial
 
 ## 🤝 Contribuir
 
